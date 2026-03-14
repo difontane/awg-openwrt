@@ -2,21 +2,26 @@ const axios = require('axios');
 const cheerio = require('cheerio');
 const core = require('@actions/core');
 
-const version = process.argv[2]; // Получение версии OpenWRT из аргумента командной строки
-const filterTargetsStr = process.argv[3] || ''; // Фильтр по targets (опционально, через запятую)
-const filterSubtargetsStr = process.argv[4] || ''; // Фильтр по subtargets (опционально, через запятую)
-
-// Преобразуем строки с запятыми в массивы
-const filterTargets = filterTargetsStr ? filterTargetsStr.split(',').map(t => t.trim()).filter(t => t) : [];
-const filterSubtargets = filterSubtargetsStr ? filterSubtargetsStr.split(',').map(s => s.trim()).filter(s => s) : [];
+const version = process.argv[2]; // Версия OpenWRT
+const filterTargetsStr = process.argv[3] || ''; // target
+const filterSubtargetsStr = process.argv[4] || ''; // subtarget
+const customVermagic = process.argv[5] || ''; // vermagic - теперь обязательный параметр!
 
 if (!version) {
   core.setFailed('Version argument is required');
   process.exit(1);
 }
 
-const url = `https://downloads.openwrt.org/releases/${version}/targets/`;
+if (!customVermagic) {
+  core.setFailed('Vermagic argument is required for specific kernel build');
+  process.exit(1);
+}
 
+// Преобразуем строки с запятыми в массивы
+const filterTargets = filterTargetsStr ? filterTargetsStr.split(',').map(t => t.trim()).filter(t => t) : [];
+const filterSubtargets = filterSubtargetsStr ? filterSubtargetsStr.split(',').map(s => s.trim()).filter(s => s) : [];
+
+// Функция для получения HTML
 async function fetchHTML(url) {
   try {
     const { data } = await axios.get(url);
@@ -27,100 +32,102 @@ async function fetchHTML(url) {
   }
 }
 
-async function getTargets() {
-  const $ = await fetchHTML(url);
-  const targets = [];
-  $('table tr td.n a').each((index, element) => {
-    const name = $(element).attr('href');
-    if (name && name.endsWith('/')) {
-      targets.push(name.slice(0, -1));
-    }
-  });
-  return targets;
-}
-
-async function getSubtargets(target) {
-  const $ = await fetchHTML(`${url}${target}/`);
-  const subtargets = [];
-  $('table tr td.n a').each((index, element) => {
-    const name = $(element).attr('href');
-    if (name && name.endsWith('/')) {
-      subtargets.push(name.slice(0, -1));
-    }
-  });
-  return subtargets;
-}
-
-async function getDetails(target, subtarget) {
-  // pkgarch from packages/index.json
-  // for apk-based is required change (should work also for ipk-based)
-  const indexUrl = `${url}${target}/${subtarget}/packages/index.json`;
-  let pkgarch = '';
-  try {
-    const { data } = await axios.get(indexUrl, { responseType: 'json' });
-    pkgarch = data.architecture || '';
-  } catch (e) {
-    // keep pkgarch empty
-  }
-
-  // vermagic from kmods directory name (more reliable than parsing kernel filename)
-  const kmodsUrl = `${url}${target}/${subtarget}/kmods/`;
-  const $ = await fetchHTML(kmodsUrl);
-  let vermagic = '';
-
-  $('table tr td.n a').each((_, el) => {
-    const name = $(el).attr('href');
-    if (name && name.endsWith('/')) {
-      vermagic = name.slice(0, -1);
-      return false; // break
-    }
-  });
-
-  return { vermagic, pkgarch };
-}
-
 async function main() {
   try {
-    const targets = await getTargets();
-    const jobConfig = [];
-
-    for (const target of targets) {
-      // Пропускаем target, если указан массив фильтров и target не входит в него
-      if (filterTargets.length > 0 && !filterTargets.includes(target)) {
-        continue;
+    // Если переданы конкретные target и subtarget
+    if (filterTargets.length === 1 && filterSubtargets.length === 1) {
+      const target = filterTargets[0];
+      const subtarget = filterSubtargets[0];
+      
+      console.log(`Building for specific target: ${target}/${subtarget}`);
+      console.log(`Using custom vermagic: ${customVermagic}`);
+      
+      // Получаем pkgarch из index.json
+      const url = `https://downloads.openwrt.org/releases/${version}/targets/`;
+      const indexUrl = `${url}${target}/${subtarget}/packages/index.json`;
+      
+      let pkgarch = '';
+      try {
+        const { data } = await axios.get(indexUrl, { responseType: 'json' });
+        pkgarch = data.architecture || '';
+        console.log(`Detected pkgarch: ${pkgarch}`);
+      } catch (e) {
+        console.log(`Could not detect pkgarch for ${target}/${subtarget}, will be empty`);
       }
 
-      const subtargets = await getSubtargets(target);
-      for (const subtarget of subtargets) {
-        // Пропускаем subtarget, если указан массив фильтров и subtarget не входит в него
-        if (filterSubtargets.length > 0 && !filterSubtargets.includes(subtarget)) {
+      // Создаем конфигурацию с нашим vermagic
+      const jobConfig = [{
+        tag: version,
+        target,
+        subtarget,
+        vermagic: customVermagic, // Используем переданный vermagic
+        pkgarch,
+      }];
+      
+      console.log('Job config created:', JSON.stringify(jobConfig, null, 2));
+      core.setOutput('job-config', JSON.stringify(jobConfig));
+    } 
+    else {
+      // Если параметры не указаны - получаем все возможные комбинации
+      console.log('No specific target/subtarget provided, scanning all targets...');
+      
+      const targetsUrl = `https://downloads.openwrt.org/releases/${version}/targets/`;
+      const $ = await fetchHTML(targetsUrl);
+      
+      const targets = [];
+      $('table tr td.n a').each((index, element) => {
+        const name = $(element).attr('href');
+        if (name && name.endsWith('/')) {
+          targets.push(name.slice(0, -1));
+        }
+      });
+
+      const jobConfig = [];
+
+      for (const target of targets) {
+        if (filterTargets.length > 0 && !filterTargets.includes(target)) {
           continue;
         }
 
-        // Добавляем в конфигурацию только если:
-        // 1. Оба массива пустые (автоматическая сборка по тегу) - собираем всё
-        // 2. Оба массива НЕ пустые (ручной запуск) - target И subtarget должны быть в своих массивах
-        const isAutomatic = filterTargets.length === 0 && filterSubtargets.length === 0;
-        const isManualMatch = filterTargets.length > 0 && filterSubtargets.length > 0 &&
-                              filterTargets.includes(target) && filterSubtargets.includes(subtarget);
+        const subtargetsUrl = `${targetsUrl}${target}/`;
+        const $sub = await fetchHTML(subtargetsUrl);
         
-        if (!isAutomatic && !isManualMatch) {
-          continue;
-        }
-
-        const { vermagic, pkgarch } = await getDetails(target, subtarget);
-
-        jobConfig.push({
-          tag: version,
-          target,
-          subtarget,
-          vermagic,
-          pkgarch,
+        const subtargets = [];
+        $sub('table tr td.n a').each((index, element) => {
+          const name = $(element).attr('href');
+          if (name && name.endsWith('/')) {
+            subtargets.push(name.slice(0, -1));
+          }
         });
-      }
-    }
 
-    core.setOutput('job-config', JSON.stringify(jobConfig));
+        for (const subtarget of subtargets) {
+          if (filterSubtargets.length > 0 && !filterSubtargets.includes(subtarget)) {
+            continue;
+          }
+
+          // Получаем pkgarch
+          const indexUrl = `${targetsUrl}${target}/${subtarget}/packages/index.json`;
+          let pkgarch = '';
+          try {
+            const { data } = await axios.get(indexUrl, { responseType: 'json' });
+            pkgarch = data.architecture || '';
+          } catch (e) {
+            // ignore
+          }
+
+          jobConfig.push({
+            tag: version,
+            target,
+            subtarget,
+            vermagic: customVermagic, // Используем один vermagic для всех
+            pkgarch,
+          });
+        }
+      }
+
+      console.log(`Generated config for ${jobConfig.length} targets`);
+      core.setOutput('job-config', JSON.stringify(jobConfig));
+    }
   } catch (error) {
     core.setFailed(error.message);
   }

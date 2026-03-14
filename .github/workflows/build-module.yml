@@ -6,24 +6,24 @@ on:
       - "v*.*.*"
   workflow_call:
     inputs:
-      tag_name:
+      tag_name: 24.10.4
         required: true
         type: string
   workflow_dispatch:
     inputs:
       version:
-        description: 'OpenWRT version (e.g., 24.10.5)'
+        description: 'OpenWRT 24.10.4'
         required: true
         type: string
       targets:
-        description: 'Targets (comma-separated, optional)'
+        description: 'rockchip'
         required: false
         type: string
       subtargets:
-        description: 'Subtargets (comma-separated, optional)'
+        description: 'armv8'
         required: false
         type: string
-
+      vermagic: 108651911f3013fd27addab0d1c3f80e-r1
 
 jobs:
   generate-config:

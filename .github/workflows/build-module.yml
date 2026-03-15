@@ -163,7 +163,6 @@ jobs:
           echo "CONFIG_PACKAGE_luci-i18n-amneziawg-ru=y" >> .config
           
           make defconfig
-
       - name: Build AmneziaWG packages
         run: |
           SDK_DIR=$(find . -maxdepth 1 -name "openwrt-sdk-*" -type d | head -n1)

@@ -14,6 +14,12 @@ MAKE_PATH:=src
 
 include $(INCLUDE_DIR)/package.mk
 
+# === ДОБАВЬТЕ ЭТОТ БЛОК ===
+# Принудительная установка vermagic из переменной окружения
+ifneq ($(PKG_VERMAGIC),)
+  PKG_EXTRA_VERMAGIC:=$(PKG_VERMAGIC)
+endif
+
 define KernelPackage/amneziawg
 	SECTION:=kernel
 	CATEGORY:=Kernel modules
@@ -25,6 +31,8 @@ define KernelPackage/amneziawg
 		+kmod-udptunnel6 \
 		+kmod-crypto-lib-chacha20poly1305 \
 		+kmod-crypto-lib-curve25519
+	# Добавьте эту строку для vermagic
+	EXTRA_DEPENDS:=kernel (=$(LINUX_VERSION)-$(PKG_VERMAGIC))
 endef
 
 define Build/Prepare
@@ -34,10 +42,17 @@ define Build/Prepare
 endef
 
 define Build/Compile
+	# === ДОБАВЬТЕ ЭТИ СТРОКИ ===
+	# Принудительно устанавливаем vermagic в модуле
+	if [ -n "$(PKG_EXTRA_VERMAGIC)" ]; then \
+		echo "Setting vermagic to: $(PKG_EXTRA_VERMAGIC)"; \
+		echo 'MODULE_VERMAGIC_$(PKG_EXTRA_VERMAGIC) :=' > $(PKG_BUILD_DIR)/$(MAKE_PATH)/vermagic.h; \
+	fi
+	
 	$(MAKE_VARS) $(MAKE) -C "$(LINUX_DIR)" \
 		$(KERNEL_MAKE_FLAGS) \
 		M="$(PKG_BUILD_DIR)/$(MAKE_PATH)" \
-		EXTRA_CFLAGS="$(BUILDFLAGS)" \
+		EXTRA_CFLAGS="$(BUILDFLAGS) -DCOMPAT_CANNOT_USE_SYSTEM_CRYPTO" \
 		WIREGUARD_VERSION="$(WIREGUARD_VERSION)" \
 		modules
 endef

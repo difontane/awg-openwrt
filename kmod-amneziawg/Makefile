@@ -32,7 +32,7 @@ define KernelPackage/amneziawg
 		+kmod-crypto-lib-chacha20poly1305 \
 		+kmod-crypto-lib-curve25519
 	# Добавьте эту строку для vermagic
-	EXTRA_DEPENDS:=kernel (=$(LINUX_VERSION)-$(PKG_VERMAGIC))
+	EXTRA_DEPENDS:=kernel (=$(LINUX_VERSION)~$(PKG_VERMAGIC))
 endef
 
 define Build/Prepare

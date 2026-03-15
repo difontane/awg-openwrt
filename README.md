@@ -1,4 +1,4 @@
-№ !!! Build for NanoPi R5C with FriendlyWRT 24.10.4 with kernel 6.6.10 only. 
+# !!! Build for NanoPi R5C with FriendlyWRT 24.10.4 with kernel 6.6.10 only. 
 
 
 ![Downloads](https://img.shields.io/github/downloads/Slava-Shchipunov/awg-openwrt/total)

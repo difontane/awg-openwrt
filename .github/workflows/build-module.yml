@@ -159,36 +159,28 @@ jobs:
           # Configure packages to build
           echo "CONFIG_PACKAGE_kmod-amneziawg=m" > .config
           echo "CONFIG_PACKAGE_amneziawg-tools=y" >> .config
-          echo "CONFIG_PACKAGE_luci-proto-amneziawg=y" >> .config
+          echo "CONFIG_PACKAGE_luci-proto-amneziawg=y" > .config
           echo "CONFIG_PACKAGE_luci-i18n-amneziawg-ru=y" >> .config
           
           make defconfig
 
       - name: Build AmneziaWG packages
         run: |
-          # Find SDK directory
           SDK_DIR=$(find . -maxdepth 1 -name "openwrt-sdk-*" -type d | head -n1)
           cd "$SDK_DIR"
-
-          echo "Building AmneziaWG packages..."
-
-          # Build kmod-amneziawg (kernel module)
-          echo "Building kmod-amneziawg..."
-          make package/kmod-amneziawg/{download,prepare} V=s || true
-          make package/kmod-amneziawg/compile V=s || true
-
-          # Build luci-proto-amneziawg (web interface)
-          echo "Building luci-proto-amneziawg..."
-          make package/luci-proto-amneziawg/{download,prepare} V=s
-          make package/luci-proto-amneziawg/compile V=s
-
-          # Build amneziawg-tools (userspace tools)
-          echo "Building amneziawg-tools..."
-          make package/amneziawg-tools/{download,prepare} V=s
+    
+         # Установите vermagic для всех пакетов
+          export PKG_VERMAGIC="${{ matrix.build_env.vermagic }}"
+    
+         # Явно создайте файл .vermagic в SDK
+          echo "${{ matrix.build_env.vermagic }}" > .vermagic
+    
+          # Сборка с детальным выводом
+          make package/kmod-amneziawg/compile V=s
+    
+         # Остальные пакеты
           make package/amneziawg-tools/compile V=s
-          
-          echo "Build completed. Checking for built packages..."
-          find bin/ -name "*.?pk" | grep -E "(amneziawg|luci-proto-amneziawg|luci-i18n-amneziawg)" | head -10
+          make package/luci-proto-amneziawg/compile V=s
 
       - name: Prepare artifacts
         run: |
